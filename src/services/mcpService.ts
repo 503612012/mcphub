@@ -266,6 +266,18 @@ const getServerByTool = (toolName: string): ServerInfo | undefined => {
   return serverInfos.find((serverInfo) => serverInfo.tools.some((tool) => tool.name === toolName));
 };
 
+// 增加容错机制，优先通过group获取
+const getServerByToolAndSessionId = (toolName: string, sessionId?: string): ServerInfo | undefined => {
+  if (!sessionId) {
+    return getServerByTool(toolName);
+  }
+  const group = getGroup(sessionId);
+  return serverInfos.find((serverInfo) =>
+    serverInfo.name === group &&
+    serverInfo.tools.some((tool) => tool.name === toolName)
+  ) || getServerByTool(toolName);
+}
+
 // Add new server
 export const addServer = async (
   name: string,
@@ -620,7 +632,8 @@ const handleCallToolRequest = async (request: any, extra: any) => {
     }
 
     // Regular tool handling
-    const serverInfo = getServerByTool(request.params.name);
+    // const serverInfo = getServerByTool(request.params.name);
+    const serverInfo = getServerByToolAndSessionId(request.params.name);
     if (!serverInfo) {
       throw new Error(`Server not found: ${request.params.name}`);
     }
