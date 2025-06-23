@@ -46,6 +46,7 @@ const SettingsPage: React.FC = () => {
     smartRoutingConfig,
     loading,
     updateRoutingConfig,
+    updateRoutingConfigBatch,
     updateInstallConfig,
     updateSmartRoutingConfig,
     updateSmartRoutingConfigBatch
@@ -84,17 +85,31 @@ const SettingsPage: React.FC = () => {
     }));
   };
 
-  const handleRoutingConfigChange = async (key: 'enableGlobalRoute' | 'enableGroupNameRoute' | 'enableBearerAuth' | 'bearerAuthKey', value: boolean | string) => {
-    await updateRoutingConfig(key, value);
-
-    // If enableBearerAuth is turned on and there's no key, generate one
+  const handleRoutingConfigChange = async (key: 'enableGlobalRoute' | 'enableGroupNameRoute' | 'enableBearerAuth' | 'bearerAuthKey' | 'skipAuth', value: boolean | string) => {
+    // If enableBearerAuth is turned on and there's no key, generate one first
     if (key === 'enableBearerAuth' && value === true) {
-      if (!tempRoutingConfig.bearerAuthKey) {
+      if (!tempRoutingConfig.bearerAuthKey && !routingConfig.bearerAuthKey) {
         const newKey = generateRandomKey();
         handleBearerAuthKeyChange(newKey);
-        await updateRoutingConfig('bearerAuthKey', newKey);
+
+        // Update both enableBearerAuth and bearerAuthKey in a single call
+        const success = await updateRoutingConfigBatch({
+          enableBearerAuth: true,
+          bearerAuthKey: newKey
+        });
+
+        if (success) {
+          // Update tempRoutingConfig to reflect the saved values
+          setTempRoutingConfig(prev => ({
+            ...prev,
+            bearerAuthKey: newKey
+          }));
+        }
+        return;
       }
     }
+
+    await updateRoutingConfig(key, value);
   };
 
   const handleBearerAuthKeyChange = (value: string) => {
@@ -412,6 +427,18 @@ const SettingsPage: React.FC = () => {
                 disabled={loading}
                 checked={routingConfig.enableGroupNameRoute}
                 onCheckedChange={(checked) => handleRoutingConfigChange('enableGroupNameRoute', checked)}
+              />
+            </div>
+
+            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-md">
+              <div>
+                <h3 className="font-medium text-gray-700">{t('settings.skipAuth')}</h3>
+                <p className="text-sm text-gray-500">{t('settings.skipAuthDescription')}</p>
+              </div>
+              <Switch
+                disabled={loading}
+                checked={routingConfig.skipAuth}
+                onCheckedChange={(checked) => handleRoutingConfigChange('skipAuth', checked)}
               />
             </div>
 

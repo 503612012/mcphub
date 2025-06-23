@@ -6,6 +6,7 @@ import {
   removeServer,
   updateMcpServer,
   notifyToolChanged,
+  syncToolEmbedding,
   toggleServerStatus,
 } from '../services/mcpService.js';
 import { loadSettings, saveSettings } from '../config/index.js';
@@ -62,19 +63,25 @@ export const createServer = async (req: Request, res: Response): Promise<void> =
       return;
     }
 
-    if (!config.url && (!config.command || !config.args)) {
+    if (
+      !config.url &&
+      !config.openapi?.url &&
+      !config.openapi?.schema &&
+      (!config.command || !config.args)
+    ) {
       res.status(400).json({
         success: false,
-        message: 'Server configuration must include either a URL or command with arguments',
+        message:
+          'Server configuration must include either a URL, OpenAPI specification URL or schema, or command with arguments',
       });
       return;
     }
 
     // Validate the server type if specified
-    if (config.type && !['stdio', 'sse', 'streamable-http'].includes(config.type)) {
+    if (config.type && !['stdio', 'sse', 'streamable-http', 'openapi'].includes(config.type)) {
       res.status(400).json({
         success: false,
-        message: 'Server type must be one of: stdio, sse, streamable-http',
+        message: 'Server type must be one of: stdio, sse, streamable-http, openapi',
       });
       return;
     }
@@ -86,6 +93,38 @@ export const createServer = async (req: Request, res: Response): Promise<void> =
         message: `URL is required for ${config.type} server type`,
       });
       return;
+    }
+
+    // Validate that OpenAPI specification URL or schema is provided for openapi type
+    if (config.type === 'openapi' && !config.openapi?.url && !config.openapi?.schema) {
+      res.status(400).json({
+        success: false,
+        message: 'OpenAPI specification URL or schema is required for openapi server type',
+      });
+      return;
+    }
+
+    // Validate headers if provided
+    if (config.headers && typeof config.headers !== 'object') {
+      res.status(400).json({
+        success: false,
+        message: 'Headers must be an object',
+      });
+      return;
+    }
+
+    // Validate that headers are only used with sse, streamable-http, and openapi types
+    if (config.headers && config.type === 'stdio') {
+      res.status(400).json({
+        success: false,
+        message: 'Headers are not supported for stdio server type',
+      });
+      return;
+    }
+
+    // Set default keep-alive interval for SSE servers if not specified
+    if ((config.type === 'sse' || (!config.type && config.url)) && !config.keepAliveInterval) {
+      config.keepAliveInterval = 60000; // Default 60 seconds for SSE servers
     }
 
     const result = await addServer(name, config);
@@ -161,19 +200,25 @@ export const updateServer = async (req: Request, res: Response): Promise<void> =
       return;
     }
 
-    if (!config.url && (!config.command || !config.args)) {
+    if (
+      !config.url &&
+      !config.openapi?.url &&
+      !config.openapi?.schema &&
+      (!config.command || !config.args)
+    ) {
       res.status(400).json({
         success: false,
-        message: 'Server configuration must include either a URL or command with arguments',
+        message:
+          'Server configuration must include either a URL, OpenAPI specification URL or schema, or command with arguments',
       });
       return;
     }
 
     // Validate the server type if specified
-    if (config.type && !['stdio', 'sse', 'streamable-http'].includes(config.type)) {
+    if (config.type && !['stdio', 'sse', 'streamable-http', 'openapi'].includes(config.type)) {
       res.status(400).json({
         success: false,
-        message: 'Server type must be one of: stdio, sse, streamable-http',
+        message: 'Server type must be one of: stdio, sse, streamable-http, openapi',
       });
       return;
     }
@@ -185,6 +230,38 @@ export const updateServer = async (req: Request, res: Response): Promise<void> =
         message: `URL is required for ${config.type} server type`,
       });
       return;
+    }
+
+    // Validate that OpenAPI specification URL or schema is provided for openapi type
+    if (config.type === 'openapi' && !config.openapi?.url && !config.openapi?.schema) {
+      res.status(400).json({
+        success: false,
+        message: 'OpenAPI specification URL or schema is required for openapi server type',
+      });
+      return;
+    }
+
+    // Validate headers if provided
+    if (config.headers && typeof config.headers !== 'object') {
+      res.status(400).json({
+        success: false,
+        message: 'Headers must be an object',
+      });
+      return;
+    }
+
+    // Validate that headers are only used with sse, streamable-http, and openapi types
+    if (config.headers && config.type === 'stdio') {
+      res.status(400).json({
+        success: false,
+        message: 'Headers are not supported for stdio server type',
+      });
+      return;
+    }
+
+    // Set default keep-alive interval for SSE servers if not specified
+    if ((config.type === 'sse' || (!config.type && config.url)) && !config.keepAliveInterval) {
+      config.keepAliveInterval = 60000; // Default 60 seconds for SSE servers
     }
 
     const result = await updateMcpServer(name, config);
@@ -282,6 +359,136 @@ export const toggleServer = async (req: Request, res: Response): Promise<void> =
   }
 };
 
+// Toggle tool status for a specific server
+export const toggleTool = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { serverName, toolName } = req.params;
+    const { enabled } = req.body;
+
+    if (!serverName || !toolName) {
+      res.status(400).json({
+        success: false,
+        message: 'Server name and tool name are required',
+      });
+      return;
+    }
+
+    if (typeof enabled !== 'boolean') {
+      res.status(400).json({
+        success: false,
+        message: 'Enabled status must be a boolean',
+      });
+      return;
+    }
+
+    const settings = loadSettings();
+    if (!settings.mcpServers[serverName]) {
+      res.status(404).json({
+        success: false,
+        message: 'Server not found',
+      });
+      return;
+    }
+
+    // Initialize tools config if it doesn't exist
+    if (!settings.mcpServers[serverName].tools) {
+      settings.mcpServers[serverName].tools = {};
+    }
+
+    // Set the tool's enabled state
+    settings.mcpServers[serverName].tools![toolName] = { enabled };
+
+    if (!saveSettings(settings)) {
+      res.status(500).json({
+        success: false,
+        message: 'Failed to save settings',
+      });
+      return;
+    }
+
+    // Notify that tools have changed
+    notifyToolChanged();
+
+    res.json({
+      success: true,
+      message: `Tool ${toolName} ${enabled ? 'enabled' : 'disabled'} successfully`,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+    });
+  }
+};
+
+// Update tool description for a specific server
+export const updateToolDescription = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { serverName, toolName } = req.params;
+    const { description } = req.body;
+
+    if (!serverName || !toolName) {
+      res.status(400).json({
+        success: false,
+        message: 'Server name and tool name are required',
+      });
+      return;
+    }
+
+    if (typeof description !== 'string') {
+      res.status(400).json({
+        success: false,
+        message: 'Description must be a string',
+      });
+      return;
+    }
+
+    const settings = loadSettings();
+    if (!settings.mcpServers[serverName]) {
+      res.status(404).json({
+        success: false,
+        message: 'Server not found',
+      });
+      return;
+    }
+
+    // Initialize tools config if it doesn't exist
+    if (!settings.mcpServers[serverName].tools) {
+      settings.mcpServers[serverName].tools = {};
+    }
+
+    // Set the tool's description
+    if (!settings.mcpServers[serverName].tools![toolName]) {
+      settings.mcpServers[serverName].tools![toolName] = { enabled: true };
+    }
+
+    settings.mcpServers[serverName].tools![toolName].description = description;
+
+    if (!saveSettings(settings)) {
+      res.status(500).json({
+        success: false,
+        message: 'Failed to save settings',
+      });
+      return;
+    }
+
+    // Notify that tools have changed
+    notifyToolChanged();
+
+    syncToolEmbedding(serverName, toolName);
+
+    res.json({
+      success: true,
+      message: `Tool ${toolName} description updated successfully`,
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+    });
+  }
+};
+
 export const updateSystemConfig = (req: Request, res: Response): void => {
   try {
     const { routing, install, smartRouting } = req.body;
@@ -291,7 +498,8 @@ export const updateSystemConfig = (req: Request, res: Response): void => {
         (typeof routing.enableGlobalRoute !== 'boolean' &&
           typeof routing.enableGroupNameRoute !== 'boolean' &&
           typeof routing.enableBearerAuth !== 'boolean' &&
-          typeof routing.bearerAuthKey !== 'string')) &&
+          typeof routing.bearerAuthKey !== 'string' &&
+          typeof routing.skipAuth !== 'boolean')) &&
       (!install ||
         (typeof install.pythonIndexUrl !== 'string' && typeof install.npmRegistry !== 'string')) &&
       (!smartRouting ||
@@ -316,6 +524,7 @@ export const updateSystemConfig = (req: Request, res: Response): void => {
           enableGroupNameRoute: true,
           enableBearerAuth: false,
           bearerAuthKey: '',
+          skipAuth: false,
         },
         install: {
           pythonIndexUrl: '',
@@ -337,6 +546,7 @@ export const updateSystemConfig = (req: Request, res: Response): void => {
         enableGroupNameRoute: true,
         enableBearerAuth: false,
         bearerAuthKey: '',
+        skipAuth: false,
       };
     }
 
@@ -372,6 +582,10 @@ export const updateSystemConfig = (req: Request, res: Response): void => {
 
       if (typeof routing.bearerAuthKey === 'string') {
         settings.systemConfig.routing.bearerAuthKey = routing.bearerAuthKey;
+      }
+
+      if (typeof routing.skipAuth === 'boolean') {
+        settings.systemConfig.routing.skipAuth = routing.skipAuth;
       }
     }
 

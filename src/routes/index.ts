@@ -8,6 +8,8 @@ import {
   updateServer,
   deleteServer,
   toggleServer,
+  toggleTool,
+  updateToolDescription,
   updateSystemConfig,
 } from '../controllers/serverController.js';
 import {
@@ -32,7 +34,8 @@ import {
 } from '../controllers/marketController.js';
 import { login, register, getCurrentUser, changePassword } from '../controllers/authController.js';
 import { getAllLogs, clearLogs, streamLogs } from '../controllers/logController.js';
-import { getRuntimeConfig } from '../controllers/configController.js';
+import { getRuntimeConfig, getPublicConfig } from '../controllers/configController.js';
+import { callTool } from '../controllers/toolController.js';
 import { auth } from '../middlewares/auth.js';
 
 const router = express.Router();
@@ -45,6 +48,8 @@ export const initRoutes = (app: express.Application): void => {
   router.put('/servers/:name', updateServer);
   router.delete('/servers/:name', deleteServer);
   router.post('/servers/:name/toggle', toggleServer);
+  router.post('/servers/:serverName/tools/:toolName/toggle', toggleTool);
+  router.put('/servers/:serverName/tools/:toolName/description', updateToolDescription);
   router.put('/system-config', updateSystemConfig);
 
   // Group management routes
@@ -58,6 +63,9 @@ export const initRoutes = (app: express.Application): void => {
   router.get('/groups/:id/servers', getGroupServers);
   // New route for batch updating servers in a group
   router.put('/groups/:id/servers/batch', updateGroupServersBatch);
+
+  // Tool management routes
+  router.post('/tools/call/:server', callTool);
 
   // Market routes
   router.get('/market/servers', getAllMarketServers);
@@ -107,6 +115,9 @@ export const initRoutes = (app: express.Application): void => {
 
   // Runtime configuration endpoint (no auth required for frontend initialization)
   app.get(`${config.basePath}/config`, getRuntimeConfig);
+
+  // Public configuration endpoint (no auth required to check skipAuth setting)
+  app.get(`${config.basePath}/public-config`, getPublicConfig);
 
   app.use(`${config.basePath}/api`, router);
 };
