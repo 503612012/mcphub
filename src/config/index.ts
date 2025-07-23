@@ -3,6 +3,8 @@ import fs from 'fs';
 import { McpSettings } from '../types/index.js';
 import { getConfigFilePath } from '../utils/path.js';
 import { getPackageVersion } from '../utils/version.js';
+import { getDataService } from '../services/services.js';
+import { DataService } from '../services/dataService.js';
 
 dotenv.config();
 
@@ -15,6 +17,8 @@ const defaultConfig = {
   mcpHubVersion: getPackageVersion(),
 };
 
+const dataService: DataService = getDataService();
+
 // Settings cache
 let settingsCache: McpSettings | null = null;
 
@@ -22,7 +26,7 @@ export const getSettingsPath = (): string => {
   return getConfigFilePath('mcp_settings.json', 'Settings');
 };
 
-export const loadSettings = (): McpSettings => {
+export const loadOriginalSettings = (): McpSettings => {
   // If cache exists, return cached data directly
   if (settingsCache) {
     return settingsCache;
@@ -49,13 +53,18 @@ export const loadSettings = (): McpSettings => {
   }
 };
 
+export const loadSettings = (): McpSettings => {
+  return dataService.filterSettings!(loadOriginalSettings());
+};
+
 export const saveSettings = (settings: McpSettings): boolean => {
   const settingsPath = getSettingsPath();
   try {
-    fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf8');
+    const mergedSettings = dataService.mergeSettings!(loadOriginalSettings(), settings);
+    fs.writeFileSync(settingsPath, JSON.stringify(mergedSettings, null, 2), 'utf8');
 
     // Update cache after successful save
-    settingsCache = settings;
+    settingsCache = mergedSettings;
 
     return true;
   } catch (error) {
@@ -80,17 +89,42 @@ export const getSettingsCacheInfo = (): { hasCache: boolean } => {
   };
 };
 
-export const replaceEnvVars = (env: Record<string, any>): Record<string, any> => {
-  const res: Record<string, string> = {};
-  for (const [key, value] of Object.entries(env)) {
-    if (typeof value === 'string') {
-      res[key] = expandEnvVars(value);
-    } else {
-      res[key] = String(value);
+export function replaceEnvVars(input: Record<string, any>): Record<string, any>;
+export function replaceEnvVars(input: string[] | undefined): string[];
+export function replaceEnvVars(input: string): string;
+export function replaceEnvVars(
+  input: Record<string, any> | string[] | string | undefined,
+): Record<string, any> | string[] | string {
+  // Handle object input
+  if (input && typeof input === 'object' && !Array.isArray(input)) {
+    const res: Record<string, string> = {};
+    for (const [key, value] of Object.entries(input)) {
+      if (typeof value === 'string') {
+        res[key] = expandEnvVars(value);
+      } else {
+        res[key] = String(value);
+      }
     }
+    return res;
   }
-  return res;
-};
+
+  // Handle array input
+  if (Array.isArray(input)) {
+    return input.map((item) => expandEnvVars(item));
+  }
+
+  // Handle string input
+  if (typeof input === 'string') {
+    return expandEnvVars(input);
+  }
+
+  // Handle undefined/null array input
+  if (input === undefined || input === null) {
+    return [];
+  }
+
+  return input;
+}
 
 export const expandEnvVars = (value: string): string => {
   if (typeof value !== 'string') {
