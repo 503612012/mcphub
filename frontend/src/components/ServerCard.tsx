@@ -232,14 +232,14 @@ const ServerCard = ({ server, onRemove, onEdit, onToggle, onRefresh }: ServerCar
           <div className="flex space-x-2">
             <button
               onClick={handleEdit}
-              className="px-3 py-1 bg-blue-100 text-blue-800 rounded hover:bg-blue-200 text-sm btn-primary"
+              className="px-3 py-1 bg-blue-100 text-blue-800 rounded hover:bg-blue-200 text-sm btn-primary cursor-pointer"
             >
               {t('server.edit')}
             </button>
             <div className="flex items-center">
               <button
                 onClick={handleToggle}
-                className={`px-3 py-1 text-sm rounded transition-colors ${isToggling
+                className={`px-3 py-1 text-sm rounded transition-colors cursor-pointer ${isToggling
                   ? 'bg-gray-200 text-gray-500'
                   : server.enabled !== false
                     ? 'bg-green-100 text-green-800 hover:bg-green-200 btn-secondary'
@@ -257,11 +257,11 @@ const ServerCard = ({ server, onRemove, onEdit, onToggle, onRefresh }: ServerCar
             </div>
             <button
               onClick={handleRemove}
-              className="px-3 py-1 bg-red-100 text-red-800 rounded hover:bg-red-200 text-sm btn-danger"
+              className="px-3 py-1 bg-red-100 text-red-800 rounded hover:bg-red-200 text-sm btn-danger cursor-pointer"
             >
               {t('server.delete')}
             </button>
-            <button className="text-gray-400 hover:text-gray-600 btn-secondary">
+            <button className="text-gray-400 hover:text-gray-600 btn-secondary cursor-pointer">
               {isExpanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
             </button>
           </div>
